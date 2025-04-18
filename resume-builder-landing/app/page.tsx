@@ -17,53 +17,6 @@ export default function LandingPage() {
         <div className="absolute bottom-0 left-20 w-96 h-96 bg-blue-500/30 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
       </div>
 
-      <header className="sticky top-0 z-50 w-full backdrop-blur-md bg-slate-900/60 border-b border-slate-800/50 supports-[backdrop-filter]:bg-slate-900/20">
-        <div className="container flex h-16 items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <div className="absolute inset-0 bg-blue-500 rounded-full blur-sm"></div>
-              <div className="relative bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full p-1.5">
-                <FileText className="h-5 w-5 text-white" />
-              </div>
-            </div>
-            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-              ResumeAI
-            </span>
-          </div>
-          <nav className="hidden md:flex gap-6">
-            <Link
-              href="#how-it-works"
-              className="text-sm font-medium text-slate-300 hover:text-white transition-colors"
-            >
-              How It Works
-            </Link>
-            <Link href="#features" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">
-              Features
-            </Link>
-            <Link href="#pricing" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">
-              Pricing
-            </Link>
-            <Link
-              href="#testimonials"
-              className="text-sm font-medium text-slate-300 hover:text-white transition-colors"
-            >
-              Testimonials
-            </Link>
-          </nav>
-          <div className="flex items-center gap-4">
-            <Link href="#try-now" className="hidden sm:block">
-              <Button variant="ghost" className="text-slate-300 hover:text-white hover:bg-slate-800/50">
-                Log in
-              </Button>
-            </Link>
-            <Link href="#try-now">
-              <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white border-0 shadow-lg shadow-purple-900/20">
-                Get Started
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </header>
       <main className="flex-1">
         <section className="w-full py-12 md:py-24 lg:py-32 xl:py-48 relative overflow-hidden">
           <div className="absolute inset-0 bg-[url('/placeholder.svg?height=600&width=800')] bg-cover bg-center opacity-10"></div>
@@ -92,13 +45,13 @@ export default function LandingPage() {
                       Try for Free <ArrowRight className="h-4 w-4" />
                     </Button>
                   </Link>
-                  <Link href="/resume-builder">
+                  <Link href="/render-cv">
                     <Button
                       size="lg"
                       variant="outline"
                       className="border-slate-700 text-slate-300 hover:bg-slate-800/50 hover:text-white"
                     >
-                      See How It Works
+                      AI Resume Builder
                     </Button>
                   </Link>
                 </div>

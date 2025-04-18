@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>YAML CV Editor</title>
+    <!-- CodeMirror CSS and JS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/yaml/yaml.min.js"></script>
+    <style>
+        .container { display: flex; height: 100vh; }
+        #editor { flex: 1; height: 100%; }
+        #preview { flex: 1; height: 100%; border: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <textarea id="editor"></textarea>
+        <iframe id="preview"></iframe>
+    </div>
+
+    <script>
+        // Initialize YAML Editor
+        const editor = CodeMirror.fromTextArea(
+            document.getElementById('editor'), {
+                mode: 'yaml',
+                lineNumbers: true,
+                theme: 'default',
+                autofocus: true
+            }
+        );
+
+        // Debounce Function for Real-Time Preview
+        let timeout;
+        editor.on('change', () => {
+            clearTimeout(timeout);
+            timeout = setTimeout(updatePreview, 1000);
+        });
+
+        // Fetch and Display PDF
+        async function updatePreview() {
+            const yamlData = editor.getValue();
+            const formData = new URLSearchParams();
+            formData.append('yaml_data', yamlData);
+
+            try {
+                const response = await fetch('/generate_pdf', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    document.getElementById('preview').src = url;
+                } else {
+                    console.error('Error:', await response.text());
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        // Initial Sample YAML
+        editor.setValue(`name: John Doe
+email: john@example.com
+education:
+  - degree: PhD
+    institution: Stanford University
+    year: 2025`);
+    </script>
+</body>
+</html>
