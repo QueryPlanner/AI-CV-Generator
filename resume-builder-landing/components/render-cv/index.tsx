@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { FileText, Download, Loader2, Sparkles, ChevronLeft, ChevronRight, Menu, Home, Eye, Code, Save, Settings, ArrowLeft } from "lucide-react";
+import { FileText, Download, Loader2, Sparkles, ChevronLeft, ChevronRight, Menu, Home, Eye, Code, Save, Settings, ArrowLeft, RefreshCw } from "lucide-react";
 import Editor from "@monaco-editor/react";
 import * as yaml from "js-yaml";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -20,6 +20,15 @@ import {
 } from "@/components/ui/dialog";
 import Link from "next/link";
 import { Drawer, DrawerContent, DrawerTrigger } from "@/components/ui/drawer";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ThemeService } from "@/lib/theme-service";
+import { ThemeManagement } from '@/components/theme-management';
 
 interface RenderCVProps {
   initialYaml?: string;
@@ -27,12 +36,49 @@ interface RenderCVProps {
 }
 
 export default function RenderCV({ initialYaml, onUpdate }: RenderCVProps) {
-  const [yamlContent, setYamlContent] = useState<string>(initialYaml || "");
+  const [yamlContent, setYamlContent] = useState<string>(
+    initialYaml ||
+      `# RenderCV YAML Format
+name: John Doe
+title: Software Engineer
+contact:
+  email: john.doe@example.com
+  phone: (123) 456-7890
+  location: San Francisco, CA
+design:
+  theme: classic
+
+education:
+  - institution: University of California, Berkeley
+    degree: Bachelor of Science in Computer Science
+    date: 2018 - 2022
+    gpa: 3.9/4.0
+
+experience:
+  - company: Tech Innovations Inc.
+    title: Software Engineer
+    date: June 2022 - Present
+    description: |
+      - Developed and maintained web applications using React and Node.js
+      - Improved system performance by 35% through database optimization
+      - Collaborated with cross-functional teams to deliver features
+
+skills:
+  - category: Programming Languages
+    items: [JavaScript, TypeScript, Python, Java]
+  - category: Frameworks & Libraries
+    items: [React, Node.js, Express, Django]
+  - category: Tools & Platforms
+    items: [Git, Docker, AWS, CI/CD]`
+  );
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pdfPreviewRef = useRef<HTMLIFrameElement>(null);
   const renderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("classic");
+  const [availableThemes, setAvailableThemes] = useState<string[]>([]);
+  const [isLoadingThemes, setIsLoadingThemes] = useState<boolean>(false);
   
   // Gemini optimization states
   const [jobDescription, setJobDescription] = useState<string>("");
@@ -245,12 +291,81 @@ export default function RenderCV({ initialYaml, onUpdate }: RenderCVProps) {
     };
   }, [pdfUrl]);
 
+  // Load themes from API
+  const loadThemes = async () => {
+    try {
+      setIsLoadingThemes(true);
+      const themes = await ThemeService.getThemes();
+      setAvailableThemes(themes);
+      setIsLoadingThemes(false);
+    } catch (error) {
+      console.error("Failed to load themes:", error);
+      setIsLoadingThemes(false);
+    }
+  };
+
+  // Load themes on component mount
+  useEffect(() => {
+    loadThemes();
+  }, []);
+
+  // Function to update the template theme in the YAML
+  const updateTemplate = async (template: string) => {
+    try {
+      setSelectedTemplate(template);
+      
+      // Get the theme YAML from the API
+      const themeContent = await ThemeService.getTheme(template);
+      
+      // Parse current YAML
+      const cvData = yaml.load(yamlContent) as any;
+      
+      // Update the design theme
+      if (!cvData.design) {
+        cvData.design = {};
+      }
+      cvData.design.theme = template;
+      
+      // Convert back to YAML
+      const updatedYaml = yaml.dump(cvData);
+      
+      // Update content and render
+      setYamlContent(updatedYaml);
+      renderCV(updatedYaml);
+      
+    } catch (e: any) {
+      setError(`Error updating template: ${e.message}`);
+    }
+  };
+
   // Initial render
   useEffect(() => {
     if (validateYaml(yamlContent)) {
+      try {
+        const cvData = yaml.load(yamlContent) as any;
+        if (cvData.design?.theme) {
+          setSelectedTemplate(cvData.design.theme);
+        }
+      } catch (e) {
+        // Ignore parsing errors here
+      }
       renderCV(yamlContent);
     }
   }, []);
+
+  // Update effect when yamlContent changes from external sources
+  useEffect(() => {
+    try {
+      if (yamlContent) {
+        const cvData = yaml.load(yamlContent) as any;
+        if (cvData.design?.theme && cvData.design.theme !== selectedTemplate) {
+          setSelectedTemplate(cvData.design.theme);
+        }
+      }
+    } catch (e) {
+      // Ignore parsing errors here
+    }
+  }, [yamlContent]);
 
   return (
     <div className="flex flex-col h-screen w-full bg-slate-950">
@@ -287,13 +402,19 @@ export default function RenderCV({ initialYaml, onUpdate }: RenderCVProps) {
                 Visual Editor
               </Button>
             </div>
+            
+            <ThemeManagement 
+              yamlContent={yamlContent}
+              onThemeSelect={updateTemplate}
+            />
+            
             <Button 
               size="sm" 
               variant="outline" 
               className="bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 border-slate-700 h-7 px-3"
               onClick={() => renderCV(yamlContent)}
             >
-              <Settings className="h-3.5 w-3.5 mr-1" />
+              <RefreshCw className="h-3.5 w-3.5 mr-1" />
               Recompile
             </Button>
           </div>

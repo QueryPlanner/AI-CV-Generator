@@ -6,6 +6,10 @@ import io # <-- Import io
 import subprocess # <-- Added import
 from pathlib import Path
 from flask import Flask, request, send_file, jsonify, abort, render_template_string
+import yaml
+from rendercv.api import create_contents_of_a_typst_file_from_a_yaml_string
+from yaml_validator_fixer import fix_yaml_validation_errors, fix_yaml_with_regex
+import theme_manager  # Import the theme manager module
 
 # Ensure RenderCV and its dependencies (Typst) are installed and accessible
 try:
@@ -284,8 +288,51 @@ rendercv_settings:
 # Serve the main HTML page
 @app.route('/')
 def index():
-    # Use the larger YAML content by default
-    return render_template_string(HTML_TEMPLATE, default_yaml=DEFAULT_YAML_CONTENT)
+    # Get list of available themes for the dropdown
+    themes = theme_manager.get_available_themes()
+    # Use the default theme content
+    default_yaml = theme_manager.get_default_theme_content()
+    # Pass both to the template
+    return render_template_string(HTML_TEMPLATE, default_yaml=default_yaml, themes=themes)
+
+# API endpoint to list available themes
+@app.route('/themes', methods=['GET'])
+def list_themes():
+    themes = theme_manager.get_available_themes()
+    return jsonify({"themes": themes})
+
+# API endpoint to get a specific theme
+@app.route('/themes/<theme_name>', methods=['GET'])
+def get_theme(theme_name):
+    theme_content = theme_manager.get_theme_content(theme_name)
+    if theme_content:
+        return jsonify({"theme": theme_name, "content": theme_content})
+    else:
+        return jsonify({"error": f"Theme '{theme_name}' not found"}), 404
+
+# API endpoint to save a custom theme
+@app.route('/themes/save', methods=['POST'])
+def save_theme():
+    if not request.is_json:
+        abort(415, description="Request must be JSON.")
+    
+    data = request.get_json()
+    theme_name = data.get('theme_name')
+    yaml_content = data.get('yaml_content')
+    
+    if not theme_name or not yaml_content:
+        return jsonify({"error": "Missing 'theme_name' or 'yaml_content' in request."}), 400
+    
+    # Validate theme name (no spaces, special chars limited to underscore)
+    if not theme_name.replace('_', '').isalnum():
+        return jsonify({"error": "Theme name can only contain letters, numbers, and underscores."}), 400
+    
+    # Try to save the theme
+    success = theme_manager.save_theme(theme_name, yaml_content)
+    if success:
+        return jsonify({"message": f"Theme '{theme_name}' saved successfully."})
+    else:
+        return jsonify({"error": f"Failed to save theme '{theme_name}'."}), 500
 
 # API endpoint to render YAML to PDF using intermediate Typst file and CLI
 @app.route('/render_live', methods=['POST'])
@@ -303,9 +350,11 @@ def render_live():
     if not yaml_content:
         return jsonify({"error": "Missing 'yaml_content' in request."}), 400
 
+    # Automatically fix common validation errors
+    yaml_content = fix_yaml_validation_errors(yaml_content)
+
     # Log diagnostic information about icon configuration
     try:
-        import yaml
         parsed_yaml = yaml.safe_load(yaml_content)
         # Log header and connection settings
         if 'design' in parsed_yaml and 'header' in parsed_yaml['design']:
@@ -334,18 +383,30 @@ def render_live():
 
         # === Step 1.5: Check for Validation Errors (RenderCV returns list on error) ===
         if isinstance(typst_content, list):
-            app.logger.warning(f"RenderCV validation failed. Errors: {typst_content}")
-            # Format errors for frontend
-            error_messages = []
-            for error in typst_content:
-                field_path = '.'.join(error.get('loc', [])) # Join location tuple into string
-                message = error.get('msg', 'Unknown validation error')
-                error_messages.append(f"Field '{field_path}': {message}")
+            app.logger.warning(f"RenderCV validation failed. Attempting to fix more errors...")
+            
+            # Apply a more aggressive fix using regex directly on the YAML string
+            yaml_content = fix_yaml_with_regex(yaml_content)
+            
+            # Try validation again with the fixed content
+            typst_content = create_contents_of_a_typst_file_from_a_yaml_string(
+                yaml_file_as_string=yaml_content
+            )
+            
+            # If still failing, report the errors to the user
+            if isinstance(typst_content, list):
+                app.logger.warning(f"RenderCV validation still failed after fixes. Errors: {typst_content}")
+                # Format errors for frontend
+                error_messages = []
+                for error in typst_content:
+                    field_path = '.'.join(error.get('loc', [])) # Join location tuple into string
+                    message = error.get('msg', 'Unknown validation error')
+                    error_messages.append(f"Field '{field_path}': {message}")
 
-            return jsonify({
-                "error": "YAML validation failed.",
-                "details": error_messages
-            }), 400 # Bad Request
+                return jsonify({
+                    "error": "YAML validation failed.",
+                    "details": error_messages
+                }), 400 # Bad Request
 
         if not typst_content:
             # This might happen due to other internal RenderCV issues
@@ -379,9 +440,19 @@ def render_live():
             app.logger.info(f"Target temporary PDF path: {temp_pdf_path}")
 
             app.logger.info(f"Compiling {temp_typ_path} to {temp_pdf_path} using typst CLI...")
-            compile_command = ["typst", "compile", str(temp_typ_path), str(temp_pdf_path)]
-            # Add '--font-path' if needed, or ensure fonts are system-installed
-
+            
+            # Prepare compilation command with advanced font options
+            compile_command = ["typst", "compile"]
+            
+            # Add common options
+            compile_command.extend(["--diagnostic-format", "human"])  # For better error messages
+            
+            # Typst doesn't support --with-system-fonts flag
+            # compile_command.extend(["--with-system-fonts"])
+            
+            # Add input and output paths
+            compile_command.extend([str(temp_typ_path), str(temp_pdf_path)])
+            
             # Update the compile command to include font path for icons
             # Get the font directory from RenderCV
             try:
@@ -403,8 +474,48 @@ def render_live():
             # Check for custom font path from environment variable
             custom_font_path = os.environ.get('RENDERCV_FONT_PATH')
             if custom_font_path and os.path.exists(custom_font_path):
+                # Check if path has a trailing slash and add one if needed
+                if not custom_font_path.endswith('/') and not custom_font_path.endswith('\\'):
+                    app.logger.info(f"Adding trailing slash to font path")
+                    custom_font_path += os.path.sep
+                
+                # Add the font path to the command
                 compile_command.extend(["--font-path", custom_font_path])
                 app.logger.info(f"Added custom font path from environment: {custom_font_path}")
+                
+                # Log available Font Awesome files
+                app.logger.info(f"Checking custom font path for Font Awesome files:")
+                font_awesome_files = [f for f in os.listdir(custom_font_path) if f.startswith('fa-')]
+                if font_awesome_files:
+                    app.logger.info(f"Found {len(font_awesome_files)} Font Awesome files:")
+                    for fa_file in font_awesome_files:
+                        app.logger.info(f"  - {fa_file}")
+                    
+                    # Modify Typst content to ensure Font Awesome is properly used
+                    if 'typst_content' in locals() and isinstance(typst_content, str):
+                        # Check if fa-brands is available
+                        brands_available = any('brands' in f.lower() for f in font_awesome_files)
+                        if brands_available:
+                            app.logger.info("Found Font Awesome Brand icons, ensuring they're used in the template")
+                            
+                            # Import our font mapper
+                            try:
+                                import font_awesome_map
+                                # Inject Font Awesome setup into the Typst content
+                                typst_content = font_awesome_map.inject_font_awesome_import(typst_content)
+                                app.logger.info("Injected Font Awesome setup into Typst content")
+                                
+                                # Update the Typst file with the modified content
+                                temp_typ_file.close()  # Close to write new content
+                                with open(temp_typ_path, 'w', encoding='utf-8') as f:
+                                    f.write(typst_content)
+                                app.logger.info("Updated Typst file with Font Awesome support")
+                            except ImportError:
+                                app.logger.warning("Could not import font_awesome_map module")
+                            except Exception as e:
+                                app.logger.warning(f"Error injecting Font Awesome support: {e}")
+                else:
+                    app.logger.warning(f"No Font Awesome files found in {custom_font_path}")
 
             process = subprocess.run(compile_command, capture_output=True, text=True, check=False) # Don't check=True initially
 
@@ -542,8 +653,114 @@ def render_live():
         app.logger.error(tb_str)
         return jsonify({"error": f"An unexpected server error occurred: {type(e).__name__}"}), 500
 
+# API endpoint to get a specific theme preview
+@app.route('/themes/<theme_name>/preview', methods=['GET'])
+def preview_theme(theme_name):
+    # First, check if the theme exists
+    theme_content = theme_manager.get_theme_content(theme_name)
+    if not theme_content:
+        return jsonify({"error": f"Theme '{theme_name}' not found"}), 404
+    
+    try:
+        # Use a sample resume content but with the requested theme
+        sample_cv = yaml.safe_load(DEFAULT_YAML_CONTENT)
+        
+        # Set the theme
+        if 'design' not in sample_cv:
+            sample_cv['design'] = {}
+        sample_cv['design']['theme'] = theme_name
+        
+        # Convert back to YAML
+        yaml_content = yaml.dump(sample_cv)
+        
+        # Generate Typst content
+        typst_content = create_contents_of_a_typst_file_from_a_yaml_string(
+            yaml_file_as_string=yaml_content
+        )
+        
+        # Check for validation errors
+        if isinstance(typst_content, list):
+            return jsonify({
+                "error": "YAML validation failed for preview.",
+                "details": [str(err) for err in typst_content]
+            }), 400
+        
+        # Write to temporary Typst file
+        with tempfile.NamedTemporaryFile(suffix=".typ", delete=False) as temp_typ_file:
+            temp_typ_path = Path(temp_typ_file.name)
+            temp_typ_file.write(typst_content.encode('utf-8'))
+        
+        # Create output PDF file
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf_file:
+            temp_pdf_path = Path(temp_pdf_file.name)
+        
+        # Compile using Typst
+        compile_command = ["typst", "compile", "--diagnostic-format", "human"]
+        
+        # Add font path if available
+        try:
+            from rendercv.constants import ASSETS_DIR
+            font_path = os.path.join(ASSETS_DIR, "fonts")
+            if os.path.exists(font_path):
+                compile_command.extend(["--font-path", font_path])
+        except ImportError:
+            pass
+        
+        # Add custom font path from environment if available
+        custom_font_path = os.environ.get('RENDERCV_FONT_PATH')
+        if custom_font_path and os.path.exists(custom_font_path):
+            compile_command.extend(["--font-path", custom_font_path])
+        
+        # Add input and output paths
+        compile_command.extend([str(temp_typ_path), str(temp_pdf_path)])
+        
+        # Run the command
+        subprocess.run(compile_command, check=True)
+        
+        # Return the PDF file
+        return send_file(temp_pdf_path, mimetype='application/pdf', as_attachment=False)
+    
+    except Exception as e:
+        print(f"Error generating preview for theme {theme_name}: {e}")
+        return jsonify({"error": f"Failed to generate preview: {str(e)}"}), 500
+    finally:
+        # Clean up temporary files
+        if 'temp_typ_path' in locals() and os.path.exists(temp_typ_path):
+            os.unlink(temp_typ_path)
+        if 'temp_pdf_path' in locals() and os.path.exists(temp_pdf_path):
+            os.unlink(temp_pdf_path)
+
+# API endpoint to delete a theme
+@app.route('/themes/<theme_name>', methods=['DELETE'])
+def delete_theme(theme_name):
+    # Check if theme exists
+    theme_content = theme_manager.get_theme_content(theme_name)
+    if not theme_content:
+        return jsonify({"error": f"Theme '{theme_name}' not found"}), 404
+    
+    # Prevent deletion of built-in themes
+    built_in_themes = ['classic', 'moderncv', 'sb2nov', 'engineeringclassic']
+    if theme_name in built_in_themes:
+        return jsonify({"error": f"Cannot delete built-in theme '{theme_name}'"}), 403
+    
+    # Try to delete the theme
+    try:
+        # Get the theme file path
+        theme_path = os.path.join(theme_manager.THEMES_DIR, f"{theme_name}.yaml")
+        
+        # Check if file exists and is not a symlink (security check)
+        if os.path.exists(theme_path) and not os.path.islink(theme_path):
+            # Delete the file
+            os.remove(theme_path)
+            return jsonify({"message": f"Theme '{theme_name}' deleted successfully"})
+        else:
+            return jsonify({"error": f"Theme file not found or is not accessible"}), 404
+    except Exception as e:
+        print(f"Error deleting theme {theme_name}: {e}")
+        return jsonify({"error": f"Failed to delete theme: {str(e)}"}), 500
+
 # --- Template for the Frontend ---
-# Modified to accept default YAML content
+# Modified to include theme selector dropdown
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -567,11 +784,57 @@ HTML_TEMPLATE = """
         #status.loading { color: blue; }
         #status.waiting { color: gray; }
         #status.warning { color: orange; } /* New warning class */
+        
+        /* Theme selector styles */
+        #theme-selector-container {
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+        #theme-selector {
+            padding: 5px;
+            margin-right: 10px;
+        }
+        #save-theme-container {
+            margin-top: 10px;
+        }
+        #save-theme-name {
+            padding: 5px;
+            margin-right: 10px;
+        }
+        .button {
+            padding: 5px 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
     </style>
 </head>
 <body>
     <div id="editor-container">
         <h3>YAML Editor</h3>
+        <!-- Theme selector -->
+        <div id="theme-selector-container">
+            <label for="theme-selector">Select Theme:</label>
+            <select id="theme-selector">
+                {% for theme in themes %}
+                <option value="{{ theme }}">{{ theme }}</option>
+                {% endfor %}
+            </select>
+            <button class="button" id="load-theme-btn">Load Theme</button>
+            
+            <div id="save-theme-container">
+                <input type="text" id="save-theme-name" placeholder="New theme name">
+                <button class="button" id="save-theme-btn">Save As New Theme</button>
+            </div>
+        </div>
+        
         <div class="codemirror-wrapper">
             <textarea id="yaml-editor">{{ default_yaml }}</textarea>
         </div>
@@ -605,6 +868,12 @@ HTML_TEMPLATE = """
         // Get the download links
         const pdfDownloadLink = document.getElementById('pdf-download-link');
         const pdfDownloadLinkFallback = document.getElementById('pdf-download-link-fallback'); // For fallback link
+        
+        // Theme selector elements
+        const themeSelector = document.getElementById('theme-selector');
+        const loadThemeBtn = document.getElementById('load-theme-btn');
+        const saveThemeNameInput = document.getElementById('save-theme-name');
+        const saveThemeBtn = document.getElementById('save-theme-btn');
 
         const statusDiv = document.getElementById('status');
         let debounceTimeout;
@@ -620,6 +889,98 @@ HTML_TEMPLATE = """
                 }, delay);
             };
         }
+
+        // Theme loading functionality
+        loadThemeBtn.addEventListener('click', async () => {
+            const selectedTheme = themeSelector.value;
+            statusDiv.textContent = `Status: Loading ${selectedTheme} theme...`;
+            statusDiv.className = 'loading';
+            
+            try {
+                const response = await fetch(`/themes/${selectedTheme}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    editor.setValue(data.content);
+                    statusDiv.textContent = `Status: ${selectedTheme} theme loaded successfully!`;
+                    statusDiv.className = 'success';
+                    // Trigger preview update
+                    setTimeout(updatePreview, 500);
+                } else {
+                    const errorData = await response.json();
+                    statusDiv.textContent = `Error loading theme: ${errorData.error || 'Unknown error'}`;
+                    statusDiv.className = 'error';
+                }
+            } catch (error) {
+                statusDiv.textContent = `Error loading theme: ${error.message}`;
+                statusDiv.className = 'error';
+            }
+        });
+        
+        // Theme saving functionality
+        saveThemeBtn.addEventListener('click', async () => {
+            const themeName = saveThemeNameInput.value.trim();
+            if (!themeName) {
+                statusDiv.textContent = 'Error: Please enter a theme name';
+                statusDiv.className = 'error';
+                return;
+            }
+            
+            // Validate theme name - letters, numbers, underscores only
+            if (!/^[a-zA-Z0-9_]+$/.test(themeName)) {
+                statusDiv.textContent = 'Error: Theme name can only contain letters, numbers, and underscores';
+                statusDiv.className = 'error';
+                return;
+            }
+            
+            statusDiv.textContent = `Status: Saving theme "${themeName}"...`;
+            statusDiv.className = 'loading';
+            
+            try {
+                const response = await fetch('/themes/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        theme_name: themeName,
+                        yaml_content: editor.getValue()
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.textContent = `Status: ${data.message}`;
+                    statusDiv.className = 'success';
+                    
+                    // Check if the theme is already in the dropdown list
+                    let themeExists = false;
+                    for (let i = 0; i < themeSelector.options.length; i++) {
+                        if (themeSelector.options[i].value === themeName) {
+                            themeExists = true;
+                            break;
+                        }
+                    }
+                    
+                    // Add the theme to the dropdown if it doesn't exist
+                    if (!themeExists) {
+                        const option = document.createElement('option');
+                        option.value = themeName;
+                        option.textContent = themeName;
+                        themeSelector.appendChild(option);
+                    }
+                    
+                    // Select the newly saved theme
+                    themeSelector.value = themeName;
+                } else {
+                    statusDiv.textContent = `Error: ${data.error || 'Failed to save theme'}`;
+                    statusDiv.className = 'error';
+                }
+            } catch (error) {
+                statusDiv.textContent = `Error saving theme: ${error.message}`;
+                statusDiv.className = 'error';
+            }
+        });
 
         async function updatePreview() {
             console.log("updatePreview function started.");

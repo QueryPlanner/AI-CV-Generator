@@ -1,0 +1,93 @@
+cv:
+  name: "John Doe"
+  location: "New York, NY"
+  email: "john.doe@example.com"
+  phone: "+1-609-999-9995"
+  website:
+  social_networks:
+    - network: "LinkedIn"
+      username: "john.doe"
+    - network: "GitHub"
+      username: "john.doe"
+  sections:
+    summary:
+      - "Experienced software engineer with a passion for building elegant, efficient solutions to complex problems."
+      - "Specializing in full-stack web development with a focus on React, Node.js, and cloud technologies."
+    education:
+      - institution: "Stanford University"
+        area: "Computer Science"
+        degree: "MS"
+        start_date: "2018-09"
+        end_date: "2020-06"
+        location: "Stanford, CA"
+        highlights:
+          - "GPA: 3.9/4.0"
+          - "Selected for competitive research program in AI"
+    experience:
+      - company: "Tech Innovations Inc."
+        position: "Senior Software Engineer"
+        start_date: "2022-01"
+        end_date: "present"
+        location: "San Francisco, CA"
+        highlights:
+          - "Lead developer for the company's flagship product, improving performance by 40%"
+          - "Mentored junior developers and established code review processes"
+          - "Implemented CI/CD pipelines that reduced deployment time by 60%"
+    skills:
+      - label: "Programming Languages"
+        details: "JavaScript (ES6+), TypeScript, Python, Java, SQL"
+      - label: "Frameworks & Libraries"
+        details: "React, Node.js, Express, Next.js, Django, Spring Boot"
+design:
+  theme: "classic"
+  colors:
+    text: "rgb(33, 33, 33)"
+    name: "rgb(0, 79, 144)"
+    section_titles: "rgb(0, 79, 144)"
+    links: "rgb(0, 79, 144)"
+  section_titles:
+    type: "with-line"
+    font_family: "Source Sans 3"
+    font_size: "1.4em"
+    bold: true
+locale:
+  language: "en"
+  phone_number_format: "national"
+  page_numbering_template: "NAME - Page PAGE_NUMBER of TOTAL_PAGES"
+  last_updated_date_template: "Last updated in TODAY"
+  date_template: "MONTH_ABBREVIATION YEAR"
+  month: "month"
+  months: "months"
+  year: "year"
+  years: "years"
+  present: "present"
+  to: "–"
+  abbreviations_for_months:
+    - "Jan"
+    - "Feb"
+    - "Mar"
+    - "Apr"
+    - "May"
+    - "June"
+    - "July"
+    - "Aug"
+    - "Sept"
+    - "Oct"
+    - "Nov"
+    - "Dec"
+  full_names_of_months:
+    - "January"
+    - "February"
+    - "March"
+    - "April"
+    - "May"
+    - "June"
+    - "July"
+    - "August"
+    - "September"
+    - "October"
+    - "November"
+    - "December"
+rendercv_settings:
+  date: "2025-03-01"
+  bold_keywords: [] 
