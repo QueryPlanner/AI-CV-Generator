@@ -313,28 +313,65 @@ skills:
   const updateTemplate = async (template: string) => {
     try {
       setSelectedTemplate(template);
+      setIsLoading(true);
+      setError(null);
       
-      // Get the theme YAML from the API
-      const themeContent = await ThemeService.getTheme(template);
+      // Get the theme data from ThemeService which now reads from the YAML files
+      const themeData = await ThemeService.getTheme(template);
       
-      // Parse current YAML
-      const cvData = yaml.load(yamlContent) as any;
-      
-      // Update the design theme
-      if (!cvData.design) {
-        cvData.design = {};
+      if (themeData) {
+        // Parse current YAML to get user content - we'll preserve this
+        const currentData = yaml.load(yamlContent) as any;
+        const currentCV = currentData.cv || {};
+        
+        // Create a merged object with theme settings and user content
+        const mergedData = {
+          ...themeData,
+          cv: {
+            // If we have user content, keep it; otherwise use theme defaults
+            name: currentCV.name || themeData.cv?.name,
+            location: currentCV.location || themeData.cv?.location,
+            email: currentCV.email || themeData.cv?.email,
+            phone: currentCV.phone || themeData.cv?.phone,
+            website: currentCV.website || themeData.cv?.website,
+            social_networks: currentCV.social_networks || themeData.cv?.social_networks,
+            sections: currentCV.sections || themeData.cv?.sections
+          }
+        };
+        
+        // Update the design theme explicitly to ensure it's set correctly
+        if (!mergedData.design) mergedData.design = {};
+        mergedData.design.theme = template;
+        
+        // Convert to YAML
+        const updatedYaml = yaml.dump(mergedData);
+        
+        // Update content and render
+        setYamlContent(updatedYaml);
+        renderCV(updatedYaml);
+      } else {
+        // Fallback - If we couldn't get theme data, just update the theme name
+        // Parse current YAML
+        const cvData = yaml.load(yamlContent) as any;
+        
+        // Update the design theme
+        if (!cvData.design) {
+          cvData.design = {};
+        }
+        cvData.design.theme = template;
+        
+        // Convert back to YAML
+        const updatedYaml = yaml.dump(cvData);
+        
+        // Update content and render
+        setYamlContent(updatedYaml);
+        renderCV(updatedYaml);
       }
-      cvData.design.theme = template;
-      
-      // Convert back to YAML
-      const updatedYaml = yaml.dump(cvData);
-      
-      // Update content and render
-      setYamlContent(updatedYaml);
-      renderCV(updatedYaml);
       
     } catch (e: any) {
       setError(`Error updating template: ${e.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 

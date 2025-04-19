@@ -6,6 +6,7 @@ import io # <-- Import io
 import subprocess # <-- Added import
 from pathlib import Path
 from flask import Flask, request, send_file, jsonify, abort, render_template_string
+from flask_cors import CORS  # Import CORS from flask_cors
 import yaml
 from rendercv.api import create_contents_of_a_typst_file_from_a_yaml_string
 from yaml_validator_fixer import fix_yaml_validation_errors, fix_yaml_with_regex
@@ -22,6 +23,7 @@ except ImportError:
     RENDERCV_AVAILABLE = False
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes and origins
 
 # --- LARGE YAML SAMPLE --- (Corrected version from previous steps)
 # Replace the placeholder in HTML_TEMPLATE with this

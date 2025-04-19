@@ -1,13 +1,3 @@
-"use client";
-
-import React from "react";
-import RenderCV from "@/components/render-cv";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
-import Link from "next/link";
-
-// Get default YAML from the Flask API's default template
-const initialYaml = `
 cv:
   name: "John Doe"
   location: "Location"
@@ -91,7 +81,7 @@ cv:
         location:
         summary:
         highlights:
-          - 'Instructed the \"Statics\" course on Udemy (60,000+ students, 200,000+ hours watched)'
+          - "Instructed the \"Statics\" course on Udemy (60,000+ students, 200,000+ hours watched)"
     skills:
       - label: "Programming"
         details: "Proficient with Python, C++, and Git; good understanding of Web, app development, and DevOps"
@@ -162,7 +152,7 @@ design:
     make_connections_links: true
     alignment: "center"
   section_titles:
-    type: "with-full-line"
+    type: "with-partial-line"
     font_family: "Source Sans 3"
     font_size: "1.4em"
     bold: true
@@ -269,23 +259,3 @@ locale:
 rendercv_settings:
   date: "2025-03-01"
   bold_keywords: []
-
-`;
-
-export default function RenderCVPage() {
-  return (
-    <div className="container mx-auto py-6 flex flex-col h-screen">
-      {/* Main content */}
-      <div className="flex-1 flex flex-col">
-        <RenderCV initialYaml={initialYaml} />
-      </div>
-      
-      {/* Footer */}
-      <div className="mt-6 pt-4 border-t text-center text-sm text-gray-500">
-        <p>
-          Powered by RenderCV, Typst, and Google Gemini | Create beautiful, AI-optimized professional resumes with YAML
-        </p>
-      </div>
-    </div>
-  );
-} 
